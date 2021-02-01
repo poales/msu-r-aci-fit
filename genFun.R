@@ -5,12 +5,13 @@
 #' @param forceValues A vector of forced values in order: VcMax, J, TPU, gm, Rd, aG, aS
 #' @param gammastar The Cc compensation point. Default: Tobacco.
 #' @param O2 The oxygen concentration in parts per hundred.
+#' @param pCi The internal pressure of CO2
 #' @name genFun
 #' @export
 
 
 
-genFun <- function(forceValues = c(NA,NA,NA,NA,NA,NA,NA),gammastar=3.52,O2=21){
+genFun <- function(forceValues = c(NA,NA,NA,NA,NA,NA,NA),gammastar=3.52,O2=21,pCi){
   if(!is.na(forceValues[1])){
     Vcmax <- forceValues[1]
     vc.is.forced <- T
@@ -53,10 +54,9 @@ genFun <- function(forceValues = c(NA,NA,NA,NA,NA,NA,NA),gammastar=3.52,O2=21){
   }else{
     as.is.forced <- F
   }
-  tokens <- c(vc.is.forced,j.is.forced,tpu.is.forced,gm.is.forced,rd.is.forced,ag.is.forced,as.is.forced)
   gammastar <- 3.52
   O <- O2
-  gn <- function(pCi, params) {
+  fn <- function(params, y) {
     
     i <- 1
     if(!vc.is.forced){
@@ -100,40 +100,37 @@ genFun <- function(forceValues = c(NA,NA,NA,NA,NA,NA,NA),gammastar=3.52,O2=21){
       (80.99 / (0.008314*(273.15 + 25)))
     Ko <- 12.3772-
       (23.72 / (0.008314*(273.15 + 25)))
-    fn <- function(y){
-      Cc <- pCi - y/gm
-      #
-      CoefFunc <- function( aG , gammastar, Cc ){
-        1-((1-aG)*gammastar/Cc)
-      }
-      #
-      AcFunc <- function(Cc, aG, aS, Rd, Vcmax, j, TPU, gm){
-        coef = CoefFunc( aG , gammastar, Cc )
-        coef * (Vcmax *Cc)/((Cc +Kc * (1 + O/Ko)))-Rd
-      }
-      #
-      AjFunc <- function(Cc, aG, aS, Rd, Vcmax, j, TPU, gm){
-        coef = CoefFunc( aG , gammastar, Cc )
-        coef * j/(4+(4+8*aG+4*aS)*2*((1-aG)*gammastar)/Cc)-Rd # fit a
-      }
-      # Assimilation assuming TPU limitation
-      ApFunc <- function(Cc, aG, aS, Rd, Vcmax, j, TPU, gm){
-        coef = CoefFunc( aG , gammastar, Cc )
-        result = coef * (3*TPU/(1-0.5*(1+3*aG+4*aS)*2*(1-aG)*gammastar/Cc))-Rd
-        # insert infinite y-values where the x-value (Cc) is low
-        result[Cc < 20] = Inf
-        return(result)
-      }
-      Afunc <- function(Cc, aG, aS, Rd, Vcmax, j, TPU, gm){
-        ac = AcFunc(Cc, aG, aS, Rd, Vcmax, j, TPU, gm)
-        aj = AjFunc(Cc, aG, aS, Rd, Vcmax, j, TPU, gm)
-        ap = ApFunc(Cc, aG, aS, Rd, Vcmax, j, TPU, gm)
-        min(c(ac,aj,ap))
-      }
-      y.out <- Afunc(Cc, aG, aS, Rd, Vcmax, j, TPU, gm)
-      return(y-y.out)
+    Cc <- pCi - y/gm
+    #
+    CoefFunc <- function( aG , gammastar, Cc ){
+      1-((1-aG)*gammastar/Cc)
     }
-    uniroot(fn, c(-10000, 10000))$root # solve the root of the equation
+    #
+    AcFunc <- function(Cc, aG, aS, Rd, Vcmax, j, TPU, gm){
+      coef = CoefFunc( aG , gammastar, Cc )
+      coef * (Vcmax *Cc)/((Cc +Kc * (1 + O/Ko)))-Rd
+    }
+    #
+    AjFunc <- function(Cc, aG, aS, Rd, Vcmax, j, TPU, gm){
+      coef = CoefFunc( aG , gammastar, Cc )
+      coef * j/(4+(4+8*aG+4*aS)*2*((1-aG)*gammastar)/Cc)-Rd # fit a
+    }
+    # Assimilation assuming TPU limitation
+    ApFunc <- function(Cc, aG, aS, Rd, Vcmax, j, TPU, gm){
+      coef = CoefFunc( aG , gammastar, Cc )
+      result = coef * (3*TPU/(1-0.5*(1+3*aG+4*aS)*2*(1-aG)*gammastar/Cc))-Rd
+      # insert infinite y-values where the x-value (Cc) is low
+      result[Cc < 20] = Inf
+      return(result)
+    }
+    Afunc <- function(Cc, aG, aS, Rd, Vcmax, j, TPU, gm){
+      ac = AcFunc(Cc, aG, aS, Rd, Vcmax, j, TPU, gm)
+      aj = AjFunc(Cc, aG, aS, Rd, Vcmax, j, TPU, gm)
+      ap = ApFunc(Cc, aG, aS, Rd, Vcmax, j, TPU, gm)
+      p.min(c(ac,aj,ap))
+    }
+    y.out <- Afunc(Cc, aG, aS, Rd, Vcmax, j, TPU, gm)
+    return(y-y.out)
   }
   return(gn)
 }
